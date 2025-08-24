@@ -8,10 +8,767 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-icons/4.11.0/react-icons.js" integrity="sha512-42qC3W40w2WJd7U6d+X2Tq1fR+P5A8fT5F4/Lp/p2a2a0eT5qT3f1v/p4c0c2a8f8t+T9/q4f5j+z5o/y7r9+a==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-icons/4.11.0/react-icons.js" xintegrity="sha512-42qC3W40w2WJd7U6d+X2Tq1fR+P5A8fT5F4/Lp/p2a2a0eT5qT3f1v/p4c0c2a8f8t+T9/q4f5j+z5o/y7r9+a==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    // Este script te permite usar las clases de Tailwind de forma correcta con React
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Estilos personalizados para mejorar la visual */
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
 </head>
 <body class="bg-gray-100 antialiased font-sans">
   <div id="root"></div>
-  <script type="text/babel" src="App.js"></script>
+
+  <!-- Script de la aplicación, ahora autocontenido -->
+  <script type="text/babel">
+    import { useState, useEffect } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { initializeApp } from 'firebase/app';
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+    import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, where, addDoc } from 'firebase/firestore';
+    import { FaUserCircle, FaTachometerAlt, FaCoins, FaPaperPlane, FaStore, FaUserPlus, FaFacebook, FaInstagram, FaYoutube, FaReddit, FaTwitter, FaLink, FaShareAlt, FaWhatsapp, FaTelegram } from 'react-icons/fa';
+    import { CgProfile } from 'react-icons/cg';
+
+    // Componente principal de la aplicación
+    const App = () => {
+      const [user, setUser] = useState(null);
+      const [appData, setAppData] = useState(null);
+      const [view, setView] = useState('login'); // 'login', 'register', 'dashboard'
+      const [loading, setLoading] = useState(true);
+      const [authError, setAuthError] = useState(null);
+      const [showInfo, setShowInfo] = useState(false);
+      const [infoMessage, setInfoMessage] = useState('');
+    
+      // Inicialización de Firebase
+      useEffect(() => {
+        let auth, db;
+        let authUnsubscribe = () => {};
+    
+        const initializeFirebase = async () => {
+          try {
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+    
+            // Guardar las instancias para su uso en toda la aplicación
+            setAppData({ auth, db });
+    
+            // Escuchar los cambios en el estado de autenticación
+            authUnsubscribe = onAuthStateChanged(auth, (authUser) => {
+              if (authUser) {
+                setUser(authUser);
+                setView('dashboard');
+                fetchUserData(db, authUser.uid);
+              } else {
+                setUser(null);
+                setView('login');
+                setLoading(false);
+              }
+            });
+    
+          } catch (e) {
+            console.error('Error initializing Firebase:', e);
+            setAuthError('Error al inicializar la aplicación. Inténtalo de nuevo más tarde.');
+            setLoading(false);
+          }
+        };
+    
+        initializeFirebase();
+    
+        return () => {
+          authUnsubscribe();
+        };
+      }, []);
+    
+      // Función para obtener los datos del usuario de Firestore
+      const fetchUserData = async (db, userId) => {
+        try {
+          const userRef = doc(db, 'users', userId);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            setUser({ ...user, ...userSnap.data() });
+          }
+        } catch (e) {
+          console.error('Error fetching user data:', e);
+        } finally {
+          setLoading(false);
+        }
+      };
+    
+      // Manejar el registro de usuario
+      const handleRegister = async (email, password) => {
+        setLoading(true);
+        setAuthError(null);
+        try {
+          const userCredential = await createUserWithEmailAndPassword(appData.auth, email, password);
+          const uid = userCredential.user.uid;
+          const userDocRef = doc(appData.db, 'users', uid);
+          
+          // Crear el documento del usuario con los datos iniciales
+          await setDoc(userDocRef, {
+            points: 20,
+            email: email,
+            profileImageUrl: '',
+            referralCode: uid.substring(0, 8),
+          });
+          
+          // Actualizar el estado del usuario
+          setUser({ ...userCredential.user, points: 20 });
+          setView('dashboard');
+        } catch (error) {
+          setAuthError('Error en el registro. ' + (error.message || 'Por favor, inténtalo de nuevo.'));
+        } finally {
+          setLoading(false);
+        }
+      };
+    
+      // Manejar el inicio de sesión
+      const handleLogin = async (email, password) => {
+        setLoading(true);
+        setAuthError(null);
+        try {
+          const userCredential = await signInWithEmailAndPassword(appData.auth, email, password);
+          const uid = userCredential.user.uid;
+          const userDocRef = doc(appData.db, 'users', uid);
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists()) {
+            setUser({ ...userCredential.user, ...userSnap.data() });
+          }
+          setView('dashboard');
+        } catch (error) {
+          setAuthError('Error en el inicio de sesión. Credenciales incorrectas.');
+        } finally {
+          setLoading(false);
+        }
+      };
+    
+      // Manejar el cierre de sesión
+      const handleLogout = async () => {
+        setLoading(true);
+        try {
+          await signOut(appData.auth);
+          setUser(null);
+          setView('login');
+        } catch (error) {
+          console.error('Error signing out:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      const showMessage = (message) => {
+        setInfoMessage(message);
+        setShowInfo(true);
+        setTimeout(() => setShowInfo(false), 3000);
+      };
+      
+      if (loading) {
+        return (
+          <div className="flex items-center justify-center min-h-screen bg-gray-100">
+            <div className="text-xl font-semibold text-gray-700">Cargando...</div>
+          </div>
+        );
+      }
+    
+      return (
+        <div className="min-h-screen bg-gray-100 font-sans antialiased text-gray-900">
+          <div className="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">
+            {view === 'login' && <LoginPage onLogin={handleLogin} onSwitchToRegister={() => setView('register')} error={authError} />}
+            {view === 'register' && <RegisterPage onRegister={handleRegister} onSwitchToLogin={() => setView('login')} error={authError} />}
+            {view === 'dashboard' && user && appData && (
+              <DashboardPage user={user} db={appData.db} onLogout={handleLogout} showMessage={showMessage} />
+            )}
+          </div>
+          {showInfo && <InfoMessage message={infoMessage} />}
+        </div>
+      );
+    };
+    
+    // Componente para la página de inicio de sesión
+    const LoginPage = ({ onLogin, onSwitchToRegister, error }) => {
+      const [email, setEmail] = useState('');
+      const [password, setPassword] = useState('');
+    
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onLogin(email, password);
+      };
+    
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen">
+          <div className="w-full max-w-sm bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-200">
+            <h2 className="text-3xl font-bold text-center text-gray-800 mb-6">Iniciar Sesión</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-gray-700 font-medium">Correo Electrónico</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="tu@correo.com"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 font-medium">Contraseña</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="********"
+                  required
+                />
+              </div>
+              {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+              <button
+                type="submit"
+                className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md transition duration-300 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+              >
+                Entrar
+              </button>
+            </form>
+            <p className="mt-6 text-center text-gray-600">
+              ¿No tienes una cuenta?{' '}
+              <button onClick={onSwitchToRegister} className="text-blue-600 hover:underline font-bold">
+                Regístrate aquí
+              </button>
+            </p>
+          </div>
+        </div>
+      );
+    };
+    
+    // Componente para la página de registro
+    const RegisterPage = ({ onRegister, onSwitchToLogin, error }) => {
+      const [email, setEmail] = useState('');
+      const [password, setPassword] = useState('');
+      const [confirmPassword, setConfirmPassword] = useState('');
+      const [passwordError, setPasswordError] = useState(null);
+    
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (password !== confirmPassword) {
+          setPasswordError('Las contraseñas no coinciden.');
+          return;
+        }
+        setPasswordError(null);
+        onRegister(email, password);
+      };
+    
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen">
+          <div className="w-full max-w-sm bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-200">
+            <h2 className="text-3xl font-bold text-center text-gray-800 mb-6">Registro</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-gray-700 font-medium">Correo Electrónico</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="tu@correo.com"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 font-medium">Contraseña</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="********"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 font-medium">Confirmar Contraseña</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="********"
+                  required
+                />
+              </div>
+              {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+              {passwordError && <p className="text-red-500 text-sm text-center">{passwordError}</p>}
+              <button
+                type="submit"
+                className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md transition duration-300 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+              >
+                Registrarse
+              </button>
+            </form>
+            <p className="mt-6 text-center text-gray-600">
+              ¿Ya tienes una cuenta?{' '}
+              <button onClick={onSwitchToLogin} className="text-blue-600 hover:underline font-bold">
+                Inicia sesión
+              </button>
+            </p>
+          </div>
+        </div>
+      );
+    };
+    
+    // Componente para el panel de control principal
+    const DashboardPage = ({ user, db, onLogout, showMessage }) => {
+      const [userData, setUserData] = useState(user);
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [modalContent, setModalContent] = useState(null);
+    
+      // Escuchar los cambios en los datos del usuario en tiempo real
+      useEffect(() => {
+        if (!user || !db) return;
+        const userRef = doc(db, 'users', user.uid);
+        const unsubscribe = onSnapshot(userRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setUserData({ ...user, ...docSnap.data() });
+          }
+        });
+    
+        return () => unsubscribe();
+      }, [user, db]);
+    
+      // Manejador para abrir un modal
+      const openModal = (content) => {
+        setModalContent(content);
+        setIsModalOpen(true);
+      };
+    
+      // Manejador para cerrar un modal
+      const closeModal = () => {
+        setIsModalOpen(false);
+        setModalContent(null);
+      };
+      
+      // Función para actualizar la imagen de perfil
+      const handleUpdateProfileImage = async (imageUrl) => {
+        const userRef = doc(db, 'users', user.uid);
+        try {
+          const userSnap = await getDoc(userRef);
+          const currentData = userSnap.data();
+          let pointsToAward = 0;
+          if (!currentData.profileImageUrl) {
+            pointsToAward = 10;
+          }
+          
+          await updateDoc(userRef, {
+            profileImageUrl: imageUrl,
+            points: (currentData.points || 0) + pointsToAward,
+          });
+    
+          closeModal();
+          showMessage('¡Imagen de perfil actualizada! Recibiste 10 puntos.');
+        } catch (e) {
+          console.error('Error updating profile image:', e);
+        }
+      };
+    
+      // Modal para personalizar la imagen
+      const ProfileImageModal = () => {
+        const [imageUrl, setImageUrl] = useState('');
+        return (
+          <div className="p-6">
+            <h3 className="text-2xl font-bold mb-4">Personaliza tu perfil</h3>
+            <p className="mb-4">
+              Coloca una URL para tu imagen de perfil. ¡Recibirás <span className="font-bold text-yellow-500">10 puntos</span> la primera vez que lo hagas!
+            </p>
+            <input
+              type="url"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://ejemplo.com/tu-imagen.jpg"
+              className="w-full p-3 border border-gray-300 rounded-md mb-4"
+            />
+            <button
+              onClick={() => handleUpdateProfileImage(imageUrl)}
+              className="w-full bg-green-500 text-white font-bold py-3 rounded-md hover:bg-green-600 transition"
+            >
+              Guardar Imagen
+            </button>
+          </div>
+        );
+      };
+      
+      // Modal para promocionar redes sociales
+      const PromoteModal = () => {
+        const socialNetworks = [
+          { name: 'Facebook', icon: <FaFacebook className="text-blue-600" />, points: 3 },
+          { name: 'Instagram', icon: <FaInstagram className="text-pink-500" />, points: 4 },
+          { name: 'X', icon: <FaTwitter className="text-gray-900" />, points: 4 },
+          { name: 'Reddit', icon: <FaReddit className="text-orange-500" />, points: 5 },
+          { name: 'YouTube', icon: <FaYoutube className="text-red-600" />, points: 6 },
+        ];
+        const [selectedNetwork, setSelectedNetwork] = useState(socialNetworks[0]);
+        const [link, setLink] = useState('');
+        
+        const handlePromote = async () => {
+          if (!link) return;
+          if (userData.points < selectedNetwork.points) {
+            showMessage(`No tienes suficientes puntos para promocionar en ${selectedNetwork.name}.`);
+            return;
+          }
+    
+          const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+          const taskCollectionRef = collection(db, `/artifacts/${appId}/public/data/tasks`);
+          
+          try {
+             // Reducir los puntos del usuario que crea la tarea
+             const userRef = doc(db, 'users', user.uid);
+             await updateDoc(userRef, {
+               points: userData.points - selectedNetwork.points,
+             });
+    
+            await addDoc(taskCollectionRef, {
+              userId: user.uid,
+              network: selectedNetwork.name,
+              link: link,
+              points: selectedNetwork.points,
+              createdAt: new Date(),
+            });
+            closeModal();
+            showMessage(`¡Promoción en ${selectedNetwork.name} agregada!`);
+          } catch (e) {
+            console.error('Error adding task:', e);
+          }
+        };
+        
+        return (
+          <div className="p-6">
+            <h3 className="text-2xl font-bold mb-4">Promociona tus redes</h3>
+            <p className="mb-4">Selecciona una red social y el valor en puntos. Los puntos se descontarán de tu saldo cuando crees la tarea.</p>
+            <div className="flex flex-wrap gap-4 justify-center mb-6">
+              {socialNetworks.map(network => (
+                <button
+                  key={network.name}
+                  onClick={() => setSelectedNetwork(network)}
+                  className={`flex flex-col items-center p-4 rounded-xl transition ${selectedNetwork.name === network.name ? 'bg-blue-100 border-2 border-blue-500 shadow-md' : 'bg-gray-100 hover:bg-gray-200 border border-gray-300'}`}
+                >
+                  <div className="text-3xl">{network.icon}</div>
+                  <span className="text-sm font-semibold mt-2">{network.name}</span>
+                  <span className="text-xs text-gray-500">{network.points} pts</span>
+                </button>
+              ))}
+            </div>
+            <input
+              type="url"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="Copia el enlace de tu perfil aquí"
+              className="w-full p-3 border border-gray-300 rounded-md mb-4"
+              required
+            />
+            <button
+              onClick={handlePromote}
+              className="w-full bg-purple-600 text-white font-bold py-3 rounded-md hover:bg-purple-700 transition"
+            >
+              Promocionar ({selectedNetwork.points} puntos)
+            </button>
+          </div>
+        );
+      };
+      
+      // Modal para ganar puntos
+      const EarnPointsModal = () => {
+        const [tasks, setTasks] = useState([]);
+        
+        useEffect(() => {
+          const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+          const q = query(collection(db, `/artifacts/${appId}/public/data/tasks`), where('userId', '!=', user.uid));
+          
+          const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const tasksList = [];
+            querySnapshot.forEach((doc) => {
+              tasksList.push({ id: doc.id, ...doc.data() });
+            });
+            setTasks(tasksList);
+          });
+          return () => unsubscribe();
+        }, [db, user.uid]);
+    
+        const handleCompleteTask = async (taskId, taskPoints, taskOwnerId) => {
+          const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+          const taskRef = doc(db, `/artifacts/${appId}/public/data/tasks`, taskId);
+          const userRef = doc(db, 'users', user.uid);
+          
+          try {
+            // Acreditar puntos al usuario actual
+            await updateDoc(userRef, {
+              points: userData.points + taskPoints,
+            });
+            
+            // Eliminar la tarea
+            await deleteDoc(taskRef);
+            
+            showMessage(`¡Tarea completada! Ganaste ${taskPoints} puntos.`);
+    
+          } catch (e) {
+            console.error('Error completing task:', e);
+          }
+        };
+        
+        return (
+          <div className="p-6">
+            <h3 className="text-2xl font-bold mb-4">Gana Puntos</h3>
+            <p className="mb-4">Completa las siguientes tareas para ganar puntos.</p>
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {tasks.length > 0 ? (
+                tasks.map(task => (
+                  <div key={task.id} className="bg-gray-100 p-4 rounded-lg flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="text-xl">
+                        {task.network === 'Facebook' && <FaFacebook />}
+                        {task.network === 'Instagram' && <FaInstagram />}
+                        {task.network === 'X' && <FaTwitter />}
+                        {task.network === 'Reddit' && <FaReddit />}
+                        {task.network === 'YouTube' && <FaYoutube />}
+                      </div>
+                      <div>
+                        <p className="font-semibold">{task.network}</p>
+                        <a href={task.link} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline">
+                          Visitar <FaLink className="inline-block text-xs ml-1" />
+                        </a>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-lg font-bold text-green-600">+{task.points}</span>
+                      <button
+                        onClick={() => handleCompleteTask(task.id, task.points, task.userId)}
+                        className="bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition"
+                      >
+                        Completar
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-gray-500">No hay tareas disponibles en este momento. ¡Vuelve más tarde!</p>
+              )}
+            </div>
+          </div>
+        );
+      };
+      
+      // Modal para el programa de referidos
+      const ReferralModal = () => {
+        const referralLink = `${window.location.origin}?ref=${userData.referralCode}`;
+        
+        const handleCopy = () => {
+          // Usar execCommand para la compatibilidad con iframes
+          const tempInput = document.createElement('input');
+          tempInput.value = referralLink;
+          document.body.appendChild(tempInput);
+          tempInput.select();
+          document.execCommand('copy');
+          document.body.removeChild(tempInput);
+          showMessage('¡Enlace de referido copiado!');
+        };
+        
+        return (
+          <div className="p-6 text-center">
+            <h3 className="text-2xl font-bold mb-4">Programa de Referidos</h3>
+            <p className="mb-4">Comparte este enlace único con tus amigos. Cuando se registren, ambos ganarán <span className="font-bold text-yellow-500">10 puntos</span>.</p>
+            <div className="bg-gray-200 rounded-md p-4 flex items-center justify-between mb-4">
+              <input
+                type="text"
+                readOnly
+                value={referralLink}
+                className="flex-grow bg-transparent border-none outline-none text-sm text-gray-700"
+              />
+              <button onClick={handleCopy} className="ml-2 text-blue-600 hover:text-blue-800">
+                <FaLink className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="flex justify-center space-x-4">
+              <a href={`https://wa.me/?text=${encodeURIComponent(`Únete a Seguidor x Seguidor y gana puntos. Usa mi enlace de referido: ${referralLink}`)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600">
+                <FaWhatsapp className="w-8 h-8" />
+              </a>
+              <a href={`https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent('Únete a Seguidor x Seguidor y gana puntos. ¡Es gratis!')}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600">
+                <FaTelegram className="w-8 h-8" />
+              </a>
+            </div>
+          </div>
+        );
+      };
+      
+      // Modal para comprar puntos
+      const BuyPointsModal = () => {
+        return (
+          <div className="p-6 text-center">
+            <h3 className="text-2xl font-bold mb-4">Comprar Puntos</h3>
+            <p className="text-gray-600">
+              Esta función aún no está disponible. Estamos trabajando para integrar un sistema de pago seguro para que puedas comprar puntos fácilmente.
+            </p>
+          </div>
+        );
+      };
+    
+      return (
+        <div className="min-h-screen bg-gray-50 p-4">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-4xl font-extrabold text-blue-600">Seguidor x Seguidor</h1>
+            <button
+              onClick={onLogout}
+              className="bg-red-500 text-white font-semibold py-2 px-4 rounded-full shadow-md hover:bg-red-600 transition"
+            >
+              Cerrar Sesión
+            </button>
+          </div>
+    
+          <div className="bg-white rounded-xl shadow-xl p-6 sm:p-8 border border-gray-200">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-8 mb-8">
+              <div className="flex-shrink-0 relative">
+                {userData.profileImageUrl ? (
+                  <img
+                    src={userData.profileImageUrl}
+                    alt="Profile"
+                    className="w-24 h-24 rounded-full object-cover border-4 border-blue-500 shadow-md"
+                    onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/100x100/A0B9D6/ffffff?text=User"; }}
+                  />
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-blue-100 flex items-center justify-center border-4 border-blue-500 shadow-md">
+                    <CgProfile className="text-6xl text-blue-500" />
+                  </div>
+                )}
+                <button
+                  onClick={() => openModal(<ProfileImageModal />)}
+                  className="absolute bottom-0 right-0 p-1 bg-white rounded-full border border-gray-300 text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  title="Personalizar Imagen"
+                >
+                  <CgProfile />
+                </button>
+              </div>
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 break-all">{userData.email}</h2>
+                <p className="text-xl sm:text-2xl text-yellow-600 font-bold flex items-center">
+                  <FaCoins className="mr-2 text-yellow-500" />
+                  {userData.points || 0} Puntos
+                </p>
+              </div>
+            </div>
+    
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+              <DashboardButton
+                icon={<FaPaperPlane />}
+                label="Promocionar Redes"
+                onClick={() => openModal(<PromoteModal />)}
+                color="purple"
+              />
+              <DashboardButton
+                icon={<FaTachometerAlt />}
+                label="Ganar Puntos"
+                onClick={() => openModal(<EarnPointsModal />)}
+                color="green"
+              />
+              <DashboardButton
+                icon={<FaUserPlus />}
+                label="Programa de Referidos"
+                onClick={() => openModal(<ReferralModal />)}
+                color="blue"
+              />
+              <DashboardButton
+                icon={<FaStore />}
+                label="Comprar Puntos"
+                onClick={() => openModal(<BuyPointsModal />)}
+                color="red"
+              />
+            </div>
+          </div>
+    
+          {isModalOpen && (
+            <Modal onClose={closeModal}>
+              {modalContent}
+            </Modal>
+          )}
+        </div>
+      );
+    };
+    
+    const InfoMessage = ({ message }) => {
+      return (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity duration-300">
+          {message}
+        </div>
+      );
+    };
+    
+    // Componente para los botones del panel de control
+    const DashboardButton = ({ icon, label, onClick, color }) => {
+      const colorMap = {
+        purple: 'from-purple-500 to-purple-600',
+        green: 'from-green-500 to-green-600',
+        blue: 'from-blue-500 to-blue-600',
+        red: 'from-red-500 to-red-600',
+      };
+      return (
+        <button
+          onClick={onClick}
+          className={`relative group w-full p-6 bg-white rounded-xl shadow-lg border-b-4 border-t-2 border-${color}-400 overflow-hidden transform transition-all duration-300 hover:scale-105 hover:shadow-xl hover:z-10`}
+        >
+          <div className={`absolute inset-0 bg-gradient-to-br ${colorMap[color]} opacity-10 group-hover:opacity-20 transition-opacity duration-300`}></div>
+          <div className="flex flex-col items-center justify-center relative z-10">
+            <div className={`text-4xl text-${color}-600 mb-3 group-hover:scale-110 transition-transform duration-300`}>{icon}</div>
+            <span className="text-center font-bold text-gray-800">{label}</span>
+          </div>
+        </button>
+      );
+    };
+    
+    // Componente de modal reutilizable
+    const Modal = ({ children, onClose }) => {
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900 bg-opacity-75 transition-opacity duration-300">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-auto transform scale-95 transition-transform duration-300 border border-gray-200">
+            <div className="flex justify-end p-2">
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600 transition"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-6 w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            {children}
+          </div>
+        </div>
+      );
+    };
+    
+    // Renderizar la aplicación
+    const container = document.getElementById('root');
+    const root = createRoot(container);
+    root.render(<App />);
+
+  </script>
 </body>
 </html>
